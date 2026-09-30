@@ -1,5 +1,8 @@
+
 Data Details:
 -------------
+
+<mark>This is a good start. Add more specifics: what Google Earth Engine queries download this data? What format is the downloaded data in? Based on the formulas, how does this data need to be transformed? What should the final hd5 look like?<mark>
 
 ### Needed:
 

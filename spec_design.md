@@ -10,7 +10,13 @@ filesto save space. hdf5 file should be saved in where?
 
 ### User Inputs Required:
 
-CLI call potential example: 
+CLI call potential example:
+
+<mark>I would do this more symbolically: `python RADD.py AOI start_date end_date` where:
+- `AOI` is a name for the area of interest. TODO: how to create an AOI? Rather than ask for user inputs, I'd considered CLI options such as `--define-aoi`
+- `start_date` is...
+
+<mark>...etc.</mark>
 
 ```python RADD.py MSU_Forest start_date(MM/DD/YYYY) end_date(MM/DD/YYY)```
 
@@ -20,7 +26,7 @@ or
 
 AOI
 if not one previously used, then request AOI name, lat lon, if lat lon, how many
-decimal places accepted? 
+decimal places accepted?
 
 
 Time range, define behavior of what user should give, should output error if time range is invalid for any reason.

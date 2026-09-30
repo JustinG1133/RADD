@@ -1,5 +1,7 @@
 # Table of Contents
 
+<mark>BAJ: Format nicely by editing with the CodeChat Editor. Your bulleted items are misalighed (they need one more space to be nested under items 3 and 4).</mark>
+
 1. [RADD](README.md#radd)
 2. [Problem Statement](Problem_Statement_LP_.md#problem-statement)
 3. [Specifications for RADD](spec_design.md#specifications-for-radd)
