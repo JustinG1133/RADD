@@ -1,0 +1,5 @@
+issues.md
+ancillary/
+.venv/
+__pycache__/
+*.part
