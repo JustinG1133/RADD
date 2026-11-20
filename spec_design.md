@@ -1,7 +1,52 @@
-Specifications for RADD:
-========================
+Specifications for RADD
+=======================
 
-### File Specifications:
+## Datasets
+
+Every dataset is read from Google Earth Engine. Bands, pixel sizes and
+dataset-specific notes are in [Data Details](data_info.md#data-details).
+
+| Dataset | GEE collection | Kind | Scene group | Used for |
+| ------- | -------------- | ---- | ----------- | -------- |
+| [MODIS Terra Surface Reflectance](data_info.md#modis-terra-surface-reflectance) | `MODIS/061/MOD09GA` | Daily | `/native/mod09ga` | NDVI, VWC |
+| [MODIS Land Cover Type](data_info.md#modis-land-cover-type) | `MODIS/061/MCD12Q1` | Annual | `/native/mcd12q1` | Land cover, stem factor, roughness |
+| [ERA5 Hourly Climate Reanalysis](data_info.md#era5-hourly-climate-reanalysis) | `ECMWF/ERA5/HOURLY` | Hourly | `/native/era5` | Air / soil temperature, precipitation |
+| [SMAP Soil Moisture](data_info.md#smap-surface-and-root-zone-soil-moisture) | `NASA/SMAP/SPL4SMGP/008` | 3-hourly | `/native/smap_l4` | Modelled soil moisture |
+| [USGS 3DEP 10 m DEM](data_info.md#usgs-3dep-10-m-digital-elevation-model) | `USGS/3DEP/10m_collection` | Static | `/native/dem` | Elevation, slope, aspect |
+| [SRTM DEM](data_info.md#srtm-digital-elevation-model) | `USGS/SRTMGL1_003` | Static | `/native/dem` | Fallback DEM |
+| [OpenLandMap Clay Content](data_info.md#openlandmap-clay-content) | `OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02` | Static | `/native/soil` | Clay fraction (Mironov) |
+| [MODIS Vegetation Continuous Fields](data_info.md#modis-terra-vegetation-continuous-fields) (optional) | `MODIS/061/MOD44B` | Annual | `/native/mod44b` | Tree / non-tree cover |
+
+Optional datasets are downloaded only when `--optional` is given (see
+[User Inputs](#user-inputs)).
+
+## User Inputs
+
+CLI call:
+
+`python RADD.py AOI YYYY-MM-DD YYYY-MM-DD [--optional]`
+
+A specific example would be:
+
+`python RADD.py Starkville 2023-07-01 2023-07-06 --optional`
+
+* `AOI` is the name of an area of interest saved in `aois.json`. If the AOI is
+  not recognized, RADD prints the known AOIs and how to define one, then exits.
+* Define an AOI with
+  `python RADD.py --define-aoi NAME lat,lon lat,lon lat,lon [lat,lon ...]`.
+  * At least 3 vertices; lat/lon accept up to 6 decimal places. An error
+    message is shown if a vertex has too many decimals or is out of range.
+  * A last vertex that repeats the first is dropped.
+  * Self-intersecting polygons are rejected with an error.
+  * Vertices are stored counter-clockwise, whatever order they were given in.
+  * `NAME` may use letters, digits, `_` and `-`.
+  * The AOI is saved to `aois.json`. Redefining a name replaces it.
+  * `aois.json` ships with `Starkville`, a 2 km x 2 km test AOI centered on
+    Starkville, MS (33.4504, -88.8184).
+* `start_date` / `end_date` are YYYY-MM-DD (MM/DD/YYYY is also accepted).
+* `--optional` also downloads the optional datasets.
+
+## File Specifications
 
 Keep all data until the scene file (NetCDF4, see [Scene File](#scene-file)) is
 generated, then delete raw files for daily and hourly datasets. Keep data from
@@ -24,20 +69,22 @@ When running the script:
      window and the extra ERA5 hour and SMAP day), or the dates are before the
      start of its record, exit with the "data not yet available" error.
      `availability_lag_days` is only a quick pre-check.
- 2. Check whether a matching scene already exists. Look at every scene in
+2. Check whether a matching scene already exists. Look at every scene in
     `ancillary/scene/{AOI}/` with the same start and end dates. A scene matches
     if its `config` attribute and `/aoi` vertices are identical to the current
     ones (see [Scene File](#scene-file)). `config` is compared as parsed JSON,
     not as text. If one matches, do not download anything. Tell the user the
-    scene already exists, print its path, and exit. If none match, continue and
-    build a new scene.
- 3. If other scenes for the same AOI overlap the requested dates and have an
+    scene already exists, print its path, and exit. If the scene has
+    provisional days (see [Land Cover Year](#land-cover-year)), also print:
+    "{N} days use provisional land cover; delete the scene and re-run to
+    update." If none match, continue and build a new scene.
+3. If other scenes for the same AOI overlap the requested dates and have an
     identical `config` attribute and `/aoi` vertices, copy those days from their
     `/native` group instead of re-downloading. Only copy days whose
     `landcover_year` (and `vcf_year`) match what this run would use. Only the
     remaining days (plus the NDVI window) are downloaded. `/resampled` is always
-    rebuilt from the new scene's own `/native`. *(Not implemented yet.)*
- 4. Before downloading each dataset, check if that specific file exists. This is
+    rebuilt from the new scene's own `/native`.
+4. Before downloading each dataset, check if that specific file exists. This is
     important in the event of an error and it stops mid run, that way it won't
     have to re-download something.
     * Daily and hourly raw files are stored one file per dataset per UTC day:
@@ -47,6 +94,10 @@ When running the script:
     * Files are downloaded to a temporary name (`.part`) and renamed when the
       download finishes, so a crash never leaves a partial file that looks
       complete.
+    * Tiles (see [Processing rules](#processing-rules)) are saved as `.part`
+      files next to the raw file (`YYYYMMDD.tile_{row}_{col}.part`) and reused
+      on a re-run, so a failure on one tile of a large DEM does not re-download
+      the others. They are deleted once the stitched file is written.
     * Static and annual datasets are checked in the
       [Raw File Cache](#raw-file-cache) first.
 
@@ -54,7 +105,7 @@ When running the script:
    requested were downloaded successfully. The scene is also written to a
    temporary name and renamed when complete.
 
-### Raw File Cache:
+## Raw File Cache
 
 Raw files for static and annual datasets are small (MCD12Q1 is under 1 KB per
 year for a 10 x 10 km AOI), do not change once published, and are reused by
@@ -62,7 +113,7 @@ every scene for the same AOI and year. They are kept instead of deleted.
 
 | Kind           | Datasets                           | Raw files                                                       |
 | -------------- | ---------------------------------- | --------------------------------------------------------------- |
-| Static         | SRTM, 3DEP, ERA5 `soil_type`       | Kept in the cache (3DEP: see [Terrain](#terrain))               |
+| Static         | SRTM, 3DEP, OpenLandMap clay       | Kept in the cache (3DEP: see [Terrain](#terrain))               |
 | Annual         | MCD12Q1, MOD44B                    | Kept in the cache                                               |
 | Daily / hourly | MOD09GA, ERA5 hourly, SMAP         | Deleted after the scene is written; reused via run order step 3 |
 
@@ -84,7 +135,7 @@ every scene for the same AOI and year. They are kept instead of deleted.
   self-contained. The cache is only where the data comes from.
 * The cache can be deleted at any time. Files are re-downloaded when needed.
 
-### Scene File:
+## Scene File
 
 The scene file is NetCDF4 (HDF5 underneath) following CF conventions. It opens
 in xarray (`xr.open_dataset(file, group="native/mod09ga")`), h5py, MATLAB
@@ -100,7 +151,7 @@ overwritten. Scenes are matched by their `config` attribute, not by file name.
 The file stores derived variables only, at both native and resampled resolution.
 Raw downloads are deleted once the scene file is written.
 
-#### Layout:
+### Layout
 
 ```
 /                     root attributes (see below)
@@ -110,15 +161,16 @@ Raw downloads are deleted once the scene file is written.
     /mod09ga          ndvi, ndvi_max, ndvi_min, vwc            (date, y, x)
                       gapfill_flag, fallback_flag              (date, y, x)
     /mcd12q1          LC_Type1, stem_factor                    (lc_year, y, x)
+                      rms_height, corr_length                  (lc_year, y, x)
                       landcover_year, landcover_provisional    (date)
     /dem              elevation, slope, aspect_sin, aspect_cos (y, x)
+    /soil             clay                                     (y, x)
     /era5             see ERA5 variables below
     /smap_l4          see SMAP variables below
     /mod44b           optional, only if requested; same year rule as
                       mcd12q1 (vcf_year, vcf_provisional)
 /resampled            every variable above on `target_grid`,
                       plus lc_fraction                (lc_year, igbp_class, y, x)
-                      (not implemented yet)
 ```
 
 Each `/native` subgroup is self-contained, so it opens on its own:
@@ -149,7 +201,8 @@ stored per day in `/native/mcd12q1` (see [Land Cover Year](#land-cover-year)).
 was built with:
 
 * every key in [Configuration Keys](#configuration-keys) except
-  `availability_lag_days` and `gee_project`, which do not affect the output
+  `availability_lag_days`, `gee_project`, `max_request_mb` and
+  `max_tile_splits`, which do not affect the output
 * the requested dataset list (including optional datasets, if requested)
 * each dataset's pinned collection ID and band list
 
@@ -160,47 +213,12 @@ use `ncdump -h {file}` or `xr.open_dataset(file).attrs["config"]`.
 `/resampled` also stores the `target_grid` definition (crs, resolution, origin)
 and the resampling method used for each variable as attributes.
 
-#### ERA5 variables:
+## Processing
 
-The `overpass` dimension holds the hours in `overpass_hours_utc`, and the
-`overpass` coordinate variable is stored in `/native/era5`. If that list is
-empty (e.g., CYGNSS), only the daily statistics are written.
+How each dataset's variables are derived. The general rules come first, then
+one section per dataset.
 
-* `temperature_2m`, `soil_temperature_level_1`: `_mean`, `_min`, `_max` over
-  the 24 hourly values 00:00-23:00 of the UTC day (date, y, x) and `_overpass`,
-  the value at each overpass hour (date, overpass, y, x)
-* `total_precipitation`: `precip_sum` (date, y, x), the sum of the values
-  stamped 01:00 of the day through 00:00 of the next day. Each value is the
-  accumulation over the hour ending at its time stamp, so this covers the UTC
-  day exactly. Missing hours make `precip_sum` NaN.
-* `precip_lookback`: the sum over `rain_lookback_hours` before each overpass
-  (date, overpass, y, x), using the same convention (the values stamped after
-  `overpass - rain_lookback_hours`, through the overpass hour). Written only
-  when `rain_lookback_hours` is set. *(Not implemented yet.)*
-* `dew_flag`: air temperature minus dewpoint at or below `dew_threshold_k`
-  (date, overpass, y, x). Written only when `dew_threshold_k` is set. *(Not
-  implemented yet.)*
-* `soil_type` (y, x)
-
-The ERA5 download for each day runs from 00:00 of that day through 00:00 of
-the next day (25 hourly images). When `precip_lookback` is added, the download
-must also include the `rain_lookback_hours` before the first overpass hour,
-which may reach into the previous UTC day.
-
-#### SMAP variables:
-
-* `sm_surface`, `sm_rootzone`, `sm_profile`: `_mean` (date, y, x), the mean of
-  the 3-hourly steps whose centers fall in the UTC day, and `_overpass` (date,
-  overpass, y, x), the step whose center is nearest each overpass hour
-* Step centers are at :30 (01:30, 04:30, ... UTC). If GEE stamps an image on
-  the hour, it is treated as the start of the step and its center is 90 minutes
-  later.
-* **Ties:** when two steps are equally close (e.g., 10:30 and 13:30 for 12 UTC),
-  `_overpass` is the mean of both.
-* The SMAP download starts one day before the start date, because the nearest
-  step to 0 UTC can be 22:30 of the previous day.
-
-#### Processing rules:
+### Processing rules
 
 * Days are UTC calendar days.
 * All derived variables are computed at native resolution, then resampled.
@@ -210,20 +228,35 @@ which may reach into the previous UTC day.
   MOD09GA `state_1km`) are read onto the dataset's main grid with nearest
   neighbour.
 * **Extent:** the native window is the smallest block of whole native pixels
-  covering the AOI bounding box. Pixels inside the bounding box but outside the
-  AOI polygon are kept (not masked).
+  covering the AOI bounding box, plus one native pixel on every side, so
+  resampling at the AOI edges has neighbouring source pixels. Pixels outside
+  the AOI polygon are kept (not masked).
+* **Tiling:** before each download, estimate the request size as
+  width x height x bands x bytes per value, on the dataset's native grid.
+  Values are requested as float32 and masks as uint8. If the estimate is over
+  `max_request_mb`, split the native window into equal tiles of whole native
+  pixels that each fit. Each tile's `crsTransform` is the native transform
+  shifted by a whole number of pixels, so tiles line up exactly and nothing is
+  resampled. Tiles are stitched back into the full native window before the
+  raw file is written, so a raw file is the same whether it was tiled or not.
+  There is no limit on AOI size or date range; large requests just use more
+  tiles.
 * Resampling to a coarser grid:
   * continuous variables: area-weighted mean
   * aspect: mean of `aspect_sin` and `aspect_cos`
-  * categorical (`LC_Type1`, `soil_type`): mode, plus `lc_fraction` for land
+  * categorical (`LC_Type1`): mode, plus `lc_fraction` for land
     cover
   * flags: fraction of the pixel flagged (0 to 1)
+  * **NaN:** NaN source pixels are left out of every rule above. If less than
+    `min_valid_fraction` (0.5) of the output pixel's area is valid, the output
+    pixel is NaN.
 * Resampling to a finer grid: `upsample_method` (`nearest` or `bilinear`) for
-  continuous variables, nearest for everything else.
+  continuous variables, nearest for everything else. If any of the four
+  neighbours used by `bilinear` is NaN, that output pixel uses `nearest`.
 * `target_grid` is snapped to its global origin. The AOI bounding box is
   expanded outward to the nearest grid lines.
 
-#### NDVI and VWC:
+### NDVI and VWC
 
 * Mask MOD09GA pixels flagged in `state_1km` and pixels with bad band quality
   in `QC_500m`. Each `state_1km` flag applies to the 2x2 block of 500 m pixels
@@ -249,11 +282,14 @@ which may reach into the previous UTC day.
   factor from `stem_factor_table` for that pixel's `LC_Type1` in that day's
   `landcover_year` (see [Land Cover Year](#land-cover-year)). The stem factor
   is set only by the land cover class.
+* VWC is clamped at 0: the NDVI term of the formula is negative when
+  0 < NDVI < 0.168. Pixels whose `LC_Type1` is 15 (snow and ice), 16 (barren)
+  or 17 (water) get VWC = 0.
 * MODIS download range: start date minus (`ndvi_window_days` - 1) days, through
   the end date. A day with no MOD09GA image in GEE is left empty (NaN) and
   reported.
 
-#### Land Cover Year:
+### Land Cover Year
 
 MCD12Q1 and MOD44B are annual and are published a year or more late.
 
@@ -272,7 +308,55 @@ MCD12Q1 and MOD44B are annual and are published a year or more late.
   classification noise, not real change. In a scene that crosses Jan 1,
   `stem_factor` and VWC can jump on Jan 1.
 
-#### Terrain:
+### Surface Roughness
+
+* Roughness is set only by the land cover class, like the stem factor:
+  `roughness_table` gives `rms_height` (cm) and `corr_length` (cm) for each
+  IGBP class, applied to `LC_Type1` in that day's `landcover_year`. No extra
+  download.
+* `rms_height` and `corr_length` are written to `/native/mcd12q1`
+  (lc\_year, y, x), and only when `roughness_table` is set.
+* Values and their source are TBD.
+
+### ERA5 variables
+
+The `overpass` dimension holds the hours in `overpass_hours_utc`, and the
+`overpass` coordinate variable is stored in `/native/era5`. If that list is
+empty (e.g., CYGNSS), only the daily statistics are written.
+
+* `temperature_2m`, `soil_temperature_level_1`: `_mean`, `_min`, `_max` over
+  the 24 hourly values 00:00-23:00 of the UTC day (date, y, x) and `_overpass`,
+  the value at each overpass hour (date, overpass, y, x)
+* `total_precipitation`: `precip_sum` (date, y, x), the sum of the values
+  stamped 01:00 of the day through 00:00 of the next day. Each value is the
+  accumulation over the hour ending at its time stamp, so this covers the UTC
+  day exactly. Missing hours make `precip_sum` NaN.
+* `precip_lookback`: the sum over `rain_lookback_hours` before each overpass
+  (date, overpass, y, x), using the same convention (the values stamped after
+  `overpass - rain_lookback_hours`, through the overpass hour). Written only
+  when `rain_lookback_hours` is set.
+* `dew_flag`: air temperature minus dewpoint at or below `dew_threshold_k`
+  (date, overpass, y, x). Written only when `dew_threshold_k` is set.
+
+The ERA5 download for each day runs from 00:00 of that day through 00:00 of
+the next day (25 hourly images). When `precip_lookback` is added, the download
+must also include the `rain_lookback_hours` before the first overpass hour,
+which may reach into the previous UTC day.
+
+### SMAP variables
+
+* `sm_surface`, `sm_rootzone`, `sm_profile`: `_mean` (date, y, x), the mean of
+  the 3-hourly steps whose centers fall in the UTC day, and `_overpass` (date,
+  overpass, y, x), the step whose center is nearest each overpass hour
+* Step centers are at :30 (01:30, 04:30, ... UTC). If GEE stamps an image on
+  the hour, it is treated as the start of the step and its center is 90 minutes
+  later.
+* **Ties:** when two steps are equally close (e.g., 10:30 and 13:30 for 12 UTC),
+  `_overpass` is the mean of both.
+* The SMAP download starts one day before the start date, because the nearest
+  step to 0 UTC can be 22:30 of the previous day.
+
+### Terrain
 
 * If USGS 3DEP 10 m (`USGS/3DEP/10m_collection`) covers the entire AOI (no
   nodata pixels), use it. Otherwise use SRTM 30 m for the entire AOI. Record
@@ -287,44 +371,29 @@ MCD12Q1 and MOD44B are annual and are published a year or more late.
   as `aspect_sin` / `aspect_cos` (NaN where the slope is 0).
 * Both DEMs are kept in the [Raw File Cache](#raw-file-cache).
 
+### Soil Texture
 
-#### <mark> **TODO: Look into adding a finer soil texture dataset (e.g., OpenLandMap clay/sand content in GEE) for the dielectric models. ERA5 `soil_type` is ~28 km and describes the 30-100 cm root zone.** </mark>
+* The retrieval uses the Mironov dielectric model, which needs clay fraction
+  only. Clay comes from OpenLandMap
+  (`OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02`, see
+  [data\_info](data_info.md#openlandmap-clay-content)).
+* `clay` (%) is the `b0` (surface) band by default. Another depth is chosen by
+  editing the dataset's `bands` in `config.toml`.
+* Static: kept in the [Raw File Cache](#raw-file-cache). Continuous, so it
+  follows the continuous resampling rules.
+* ERA5 `soil_type` is not used (about 28 km, and it describes the 30-100 cm
+  root zone).
 
-### User Inputs:
+## Customization
 
-CLI call:
-
-`python RADD.py AOI MM/DD/YYYY MM/DD/YYYY [optional]`
-
-A specific example would be:
-
-`python RADD.py Starkville 07/01/2023 07/06/2023 optional`
-
-* `AOI` is the name of an area of interest saved in `aois.json`. If the AOI is
-  not recognized, RADD prints the known AOIs and how to define one, then exits.
-* Define an AOI with
-  `python RADD.py --define-aoi NAME lat,lon lat,lon lat,lon [lat,lon ...]`.
-  * At least 3 vertices; lat/lon accept up to 6 decimal places. An error
-    message is shown if a vertex has too many decimals or is out of range.
-  * `NAME` may use letters, digits, `_` and `-`.
-  * The AOI is saved to `aois.json`. Redefining a name replaces it.
-  * `aois.json` ships with `Starkville`, a 2 km x 2 km test AOI centered on
-    Starkville, MS (33.4504, -88.8184).
-* `start_date` / `end_date`'s format is MM/DD/YYYY (YYYY-MM-DD is also
-  accepted).
-* `optional` argument should be added to the end of the call if the user wants
-  to download the optional datasets as well.
-
-### Customization:
-
-TO-REVIEW The code should be designed in a way that makes adding additional
+The code should be designed in a way that makes adding additional
 Google Earth Engine hosted datasets **very easy**. The configuration is in
 `config.toml` (TOML). Each dataset is a `[datasets.{key}]` table with its
 pinned `collection` ID and the `bands` to request, so bands can be edited for
 existing datasets. A new dataset also needs code that says how its bands are
 processed (see open issues).
 
-#### Configuration Keys:
+### Configuration Keys
 
 | Key                     | Example                                             | Purpose                                               |
 | ----------------------- | --------------------------------------------------- | ----------------------------------------------------- |
@@ -338,26 +407,35 @@ processed (see open issues).
 | `ndvi_percentiles`      | `[5, 95]`                                           | Percentiles used as NDVI\_min / NDVI\_max             |
 | `ndvi_min_valid_obs`    | `5`                                                 | Valid days needed before using the per-class fallback |
 | `max_gap_fill_days`     | `8`                                                 | Longest NDVI gap filled by holding the last value     |
+| `min_valid_fraction`    | `0.5`                                               | Valid area an output pixel needs when resampling      |
 | `availability_lag_days` | `8`                                                 | Days after a date before it can be requested (MODIS)  |
+| `max_request_mb`        | `32`                                                | Largest request sent to GEE before tiling (GEE limit is about 48 MB) |
+| `max_tile_splits`       | `3`                                                 | Times a tile can be split after a GEE size or memory error |
 | `ndvi_fallback_table`   | `ndvi_min = 0.1`, `ndvi_max = "current"`            | Fallback NDVI\_min / NDVI\_max (Chan et al. 2013)     |
 | `stem_factor_table`     | per IGBP class                                      | Stem factor for VWC (Chan et al. 2013, Table 1)       |
+| `roughness_table`       | per IGBP class: `rms_height`, `corr_length` (cm)    | Surface roughness by land cover class (values TBD)    |
 
-* `target_grid` and `upsample_method` are not used until `/resampled` is
-  implemented.
+* `target_grid` (`origin_x`, `origin_y`) and `upsample_method` values are TBD.
+* `overpass_hours_utc` is set by the user for the study area. NISAR passes at
+  about 6 AM / 6 PM local solar time, so the UTC hours depend on the AOI's
+  longitude (`[12, 0]` fits the central US).
 * `rain_lookback_hours` and `dew_threshold_k` are left out of `config.toml`
   until values are chosen; while they are unset, `precip_lookback` and
   `dew_flag` are not written.
+* `roughness_table` is left out of `config.toml` until values are chosen;
+  while it is unset, `rms_height` and `corr_length` are not written.
 * `stem_factor_table` values are listed in
   [data\_info](data_info.md#modis-terra-surface-reflectance). Class 17 (water)
   is not in the source table and is set to 0.
 
 Dataset collection IDs are pinned to a version (e.g., `MODIS/061/MOD09GA`).
 
-Every key except `availability_lag_days` and `gee_project`, plus the dataset
+Every key except `availability_lag_days`, `gee_project`, `max_request_mb` and
+`max_tile_splits`, plus the dataset
 list, collection IDs, and band lists, is saved in the scene's `config`
 attribute (see [Scene File](#scene-file)).
 
-### Error Handling:
+## Error Handling
 
 If AOI is not recognized, output to user "AOI '{name}' not recognized", the
 known AOIs, and the `--define-aoi` instructions, then exit. RADD never prompts
@@ -374,7 +452,7 @@ recommend the user try to run it again. Not every GEE error is retried:
 | ----------------------------------------------- | ------------------------------------------------ |
 | Network / timeout                               | Retry 3 times, 5 seconds apart                   |
 | Rate limit / 429 / "Too many concurrent"        | Retry 3 times with backoff (5, 10 seconds)       |
-| "User memory limit exceeded", payload too large | Fail immediately (splitting into tiles: open)    |
+| "User memory limit exceeded", payload too large | Split that tile into 4 and retry; fail after `max_tile_splits` splits |
 | Authentication / project not set                | Fail immediately with setup instructions         |
 | Collection ID or band not found                 | Fail immediately (bad config)                    |
 
@@ -388,23 +466,3 @@ is not a network error, and no scene file is generated.
 
 Exit codes: 0 success (or the scene already exists), 2 input / config error, 3
 data not yet available, 4 network error.
-
-### Datasets:
-
-#### Needed:
-
-##### [MODIS Terra Surface Reflectance](data_info.md#modis-terra-surface-reflectance)
-
-##### [MODIS Land Cover Type](data_info.md#modis-land-cover-type)
-
-##### [ERA5 Hourly Climate Reanalysis](data_info.md#era5-hourly-climate-reanalysis)
-
-##### [SMAP Soil Moisture](data_info.md#smap-surface-and-root-zone-soil-moisture)
-
-##### [USGS 3DEP 10 m Digital Elevation Model](data_info.md#usgs-3dep-10-m-digital-elevation-model)
-
-##### [SRTM Digital Elevation Model](data_info.md#srtm-digital-elevation-model)
-
-#### Optional:
-
-##### [MODIS Terra Vegetation Continuous Fields](data_info.md#modis-terra-vegetation-continuous-fields)

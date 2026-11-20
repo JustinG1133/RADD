@@ -1,5 +1,5 @@
-Data Details:
--------------
+Data Details
+============
 
 Example python code for pulling from a dataset that is stored as an **Image**
 is:
@@ -52,15 +52,18 @@ These snippets are for exploring a dataset. RADD itself downloads pixels with
 `ee.data.computePixels` on each dataset's own grid (see
 [Processing rules](spec_design.md#processing-rules)).
 
-### Needed:
+## Needed
 
-#### [MODIS Terra Surface Reflectance](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GA)
+### [MODIS Terra Surface Reflectance](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GA)
 
 **NDVI** = $\frac{NIR - RED}{NIR + RED}$ ; RED = sur\_refl\_b01, NIR =
 sur\_refl\_b02
 
 **VWC** =
 $(1.9134* NDVI^2 -0.3215*NDVI) + stemfactor *\frac{NDVI_{max}-NDVI_{min}}{1- NDVI_{min}}$
+
+RADD clamps VWC at 0 and sets it to 0 for classes 15-17 (see
+[NDVI and VWC](spec_design.md#ndvi-and-vwc)).
 
 The formula and the stem factors are from the SMAP Ancillary Data Report:
 Vegetation Water Content (Chan et al., 2013), Equation 1 and Table 1. The stem
@@ -98,19 +101,21 @@ days (see [NDVI and VWC](spec_design.md#ndvi-and-vwc)).
 | QC\_500m       | 500m       | N/A            | Surface Reflectance quality assurance                           |
 | state\_1km     | 1000m      | N/A            | Reflectance state QA flags (cloud, cloud shadow, aerosol, snow) |
 
-#### [MODIS Land Cover Type](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD12Q1)
+### [MODIS Land Cover Type](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD12Q1)
 
 Annual product: one image per year from 2001, dated Jan 1. Published a year or
 more late, so recent dates use the latest available year (see
 [Land Cover Year](spec_design.md#land-cover-year)). Raw files are cached. Its
 500 m grid is the same as MOD09GA's, so each MOD09GA pixel has one class.
+`LC_Type1` also sets the stem factor (above) and the surface roughness
+(`roughness_table`, see [Surface Roughness](spec_design.md#surface-roughness)).
 
 | Band name | Pixel Size | Min-Max Value | Description                                                                                                           |
 | --------- | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
 | LC\_Type1 | 500m       | N/A           | Land Cover Type 1: Annual International Geosphere-Biosphere Programme (IGBP) classification (used to get STEM factor) |
 | QC        | 500m       | N/A           | Product Quality Flags                                                                                                 |
 
-#### [ERA5 Hourly Climate Reanalysis](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_HOURLY)
+### [ERA5 Hourly Climate Reanalysis](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_HOURLY)
 
 Each `total_precipitation` value is the accumulation over the hour ending at
 the image's time stamp ("accumulated over the 1 hour ending at the validity
@@ -123,9 +128,8 @@ date and time", GEE catalog). `dewpoint_temperature_2m` is only needed for
 | dewpoint\_temperature\_2m   | 27830m     | N/A (K)       | The temperature to which the air, at 2 metres above the surface of the Earth, would have to be cooled for saturation to occur. It is a measure of the humidity of the air. Combined with temperature, it can be used to calculate the relative humidity                               |
 | total\_precipitation        | 27830m     | N/A (m)       | Accumulated liquid and frozen water (rain and snow) reaching the surface, from both large-scale and convective precipitation. Used instead of large\_scale\_precipitation, which leaves out convective rain.                                                                          |
 | soil\_temperature\_level\_1 | 27830m     | N/A (K)       | The temperature of the soil at level 1 (in the middle of layer 1). The ECMWF Integrated Forecasting System (IFS) has a four-layer representation of soil, where the surface is at 0cm: Layer 1: 0 - 7cm                                                                               |
-| soil\_type                  | 27830m     | N/A           | The texture (or classification) of soil used by the land surface scheme of the ECMWF Integrated Forecasting System (IFS) to predict the water holding capacity of soil in soil moisture and runoff calculations. It is derived from the root zone data (30-100 cm below the surface). |
 
-#### [SMAP Surface and Root Zone Soil Moisture](https://developers.google.com/earth-engine/datasets/catalog/NASA_SMAP_SPL4SMGP_008)
+### [SMAP Surface and Root Zone Soil Moisture](https://developers.google.com/earth-engine/datasets/catalog/NASA_SMAP_SPL4SMGP_008)
 
 3-hourly steps. In GEE the native grid is geographic (EPSG:4326, about 0.095
 degrees).
@@ -136,7 +140,7 @@ degrees).
 | sm\_rootzone | 11km       | 0 to 0.9      | Root zone soil moisture (0 - 100 cm)           |
 | sm\_profile  | 11km       | 0 to 0.9      | Total profile soil moisture (0cm to bedrock depth) |
 
-#### [USGS 3DEP 10 m Digital Elevation Model](https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_10m_collection)
+### [USGS 3DEP 10 m Digital Elevation Model](https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_10m_collection)
 
 `USGS/3DEP/10m_collection` (1/3 arc-second, EPSG:4269). It replaces the
 deprecated single-image asset `USGS/3DEP/10m`. The collection is tiled, so
@@ -148,7 +152,7 @@ RADD uses SRTM (see [Terrain](spec_design.md#terrain)).
 | --------- | ---------- | ------------- | ----------- |
 | elevation | 10.2m      | N/A (m)       | Elevation   |
 
-#### [SRTM Digital Elevation Model](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003)
+### [SRTM Digital Elevation Model](https://developers.google.com/earth-engine/datasets/catalog/USGS_SRTMGL1_003)
 
 Fallback DEM, used when 3DEP 10 m does not cover the whole AOI.
 
@@ -156,9 +160,22 @@ Fallback DEM, used when 3DEP 10 m does not cover the whole AOI.
 | --------- | ---------- | ------------- | ----------- |
 | elevation | 30m        | -10 to 6500   | Elevation   |
 
-### Optional:
+### [OpenLandMap Clay Content](https://developers.google.com/earth-engine/datasets/catalog/OpenLandMap_SOL_SOL_CLAY-WFRACTION_USDA-3A1A1A_M_v02)
 
-#### [MODIS Terra Vegetation Continuous Fields](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD44B#bands)
+`OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02`. Static, global, about
+250 m (EPSG:4326). Clay fraction for the Mironov dielectric model (see
+[Soil Texture](spec_design.md#soil-texture)). Each band is one depth; RADD
+requests `b0` (surface) by default. Raw files are cached. Check the band names
+and units in the GEE catalog before pinning.
+
+| Band name | Pixel Size | Min-Max Value | Description                       |
+| --------- | ---------- | ------------- | --------------------------------- |
+| b0        | 250m       | 0 - 100 (%)   | Clay content (mass fraction), 0 cm  |
+| b10       | 250m       | 0 - 100 (%)   | Clay content (mass fraction), 10 cm |
+
+## Optional
+
+### [MODIS Terra Vegetation Continuous Fields](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD44B#bands)
 
 Annual product, published a year or more late. Uses the same year rule as
 MCD12Q1 (see [Land Cover Year](spec_design.md#land-cover-year)). Raw files are
